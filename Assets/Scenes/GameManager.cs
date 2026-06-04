@@ -68,7 +68,7 @@ public class GameManager : NetworkBehaviour {
             NetworkManager.Singleton.OnClientConnectedCallback += OnClienteConectado;
             PosicionarJugador(NetworkManager.Singleton.LocalClientId);
 
-            // MODIFICACIÓN: Población inicial del mapa de forma segura en el arranque
+            // Población inicial del mapa de forma segura en el arranque
             for (int i = 0; i < esferasIniciales; i++) {
                 SpawnItemAleatorio();
             }
@@ -149,8 +149,7 @@ public class GameManager : NetworkBehaviour {
                     controller.ResetearEstadoJugador();
                     controller.TeletransportarSeguroClientRpc(posicionInicial, rotacionInicial);
 
-                    // CORRECCIÓN: Le ordenamos a todas las pantallas que pinten este clon según su ID
-                    // Pasamos (int)clientId porque nuestro switch de colores va del 0 al 3
+                    // Le ordenamos a todas las pantallas que pinten este clon según su ID
                     controller.CambiarColorCapsulaClientRpc((int)clientId);
                 }
                 else {
@@ -219,7 +218,7 @@ public class GameManager : NetworkBehaviour {
 
         foreach (var jp in listaPuntajes) {
             // Determinamos el tag de color según el clientId (0=Rojo, 1=Amarillo, 2=Azul, 3=Verde)
-            string codigoColor = "#FFFFFF"; // Blanco por defecto si entra un 5to jugador
+            string codigoColor = "#FFFFFF";
 
             switch (jp.clientId) {
                 case 0: codigoColor = "#FF0000"; break; // Jugador 1: Rojo
@@ -245,6 +244,22 @@ public class GameManager : NetworkBehaviour {
                 datosActualizados.puntos += 1;
                 listaPuntajes[i] = datosActualizados;
                 break;
+            }
+        }
+    }
+
+    // Procesa de forma autoritativa el impacto de un golpe sobre un jugador
+    [ServerRpc(RequireOwnership = false)]
+    public void NotificarGolpeServerRpc(ulong victimaClientId) {
+        if (!juegoActivo.Value) return;
+
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(victimaClientId, out var networkClient)) {
+            if (networkClient.PlayerObject != null && networkClient.PlayerObject.TryGetComponent<PlayerController>(out var controller)) {
+                // Si la víctima tiene un objeto, se lo quitamos y hacemos respawn de otra esfera
+                if (controller.VerificarSiTieneObjetoServidor()) {
+                    controller.ForzarPerdidaObjetoServidor();
+                    SpawnItemAleatorio();
+                }
             }
         }
     }
@@ -296,10 +311,11 @@ public class GameManager : NetworkBehaviour {
     public void ReiniciarPartida() {
         if (!IsServer) return;
 
-        NetworkItem[] items = FindObjectsByType<NetworkItem>(FindObjectsSortMode.None);
-        foreach (var item in items) {
-            if (item.GetComponent<NetworkObject>().IsSpawned) {
-                item.GetComponent<NetworkObject>().Despawn(true);
+        // CORRECCIÓN SEGURA: Buscamos todos los NetworkObject de la escena para limpiar los ítems
+        NetworkObject[] todosLosNetObjects = FindObjectsByType<NetworkObject>(FindObjectsSortMode.None);
+        foreach (var netObj in todosLosNetObjects) {
+            if (netObj.CompareTag("Item") && netObj.IsSpawned) {
+                netObj.Despawn(true);
             }
         }
 
@@ -313,7 +329,7 @@ public class GameManager : NetworkBehaviour {
             listaPuntajes[i] = reseteado;
         }
 
-        // MODIFICACIÓN: Volvemos a repoblar la arena con 30 esferas al resetear
+        // Volvemos a repoblar la arena con 30 esferas al resetear
         for (int i = 0; i < esferasIniciales; i++) {
             SpawnItemAleatorio();
         }
