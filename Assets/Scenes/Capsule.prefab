@@ -18,7 +18,7 @@ GameObject:
   - component: {fileID: 4011151885294233464}
   m_Layer: 0
   m_Name: Capsule
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 5132851093641282708, guid: 0000000000000000d000000000000000, type: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -159,8 +159,8 @@ MonoBehaviour:
   ShowTopMostFoldoutHeaderGroup: 1
   velocidad: 7
   fuerzaSalto: 6
-  rangoAtaque: 2
-  radioHitbox: 1.2
+  rangoAtaque: 1
+  radioHitbox: 1
   sensibilidadMouse: 15
   limiteVerticalMin: -30
   limiteVerticalMax: 60
