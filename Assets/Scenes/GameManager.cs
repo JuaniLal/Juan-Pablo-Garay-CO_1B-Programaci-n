@@ -114,7 +114,7 @@ public class GameManager : NetworkBehaviour {
                 Vector3 posicionInicial = Vector3.zero;
                 Quaternion rotacionInicial = Quaternion.identity;
 
-                // DISTRIBUCIÓN EN CRUZ SIMÉTRICA (Norte, Sur, Este, Oeste)
+                // DISTRIBUCIÓN EN CRUZ
                 switch (clientId) {
                     case 0:
                         // JUGADOR 1: Extremo Sur - Mirando al Norte
@@ -149,7 +149,7 @@ public class GameManager : NetworkBehaviour {
                     controller.ResetearEstadoJugador();
                     controller.TeletransportarSeguroClientRpc(posicionInicial, rotacionInicial);
 
-                    // Le ordenamos a todas las pantallas que pinten este clon según su ID
+                    // ordenaa todas las pantallas que pinten este clon según su ID
                     controller.CambiarColorCapsulaClientRpc((int)clientId);
                 }
                 else {
@@ -217,7 +217,7 @@ public class GameManager : NetworkBehaviour {
         string textoPuntos = "Puntajes:\n";
 
         foreach (var jp in listaPuntajes) {
-            // Determinamos el tag de color según el clientId (0=Rojo, 1=Amarillo, 2=Azul, 3=Verde)
+            //  tag de color según el clientId 
             string codigoColor = "#FFFFFF";
 
             switch (jp.clientId) {
@@ -311,7 +311,7 @@ public class GameManager : NetworkBehaviour {
     public void ReiniciarPartida() {
         if (!IsServer) return;
 
-        // CORRECCIÓN SEGURA: Buscamos todos los NetworkObject de la escena para limpiar los ítems
+        //  Buscar todos los NetworkObject de la escena para limpiar los ítems
         NetworkObject[] todosLosNetObjects = FindObjectsByType<NetworkObject>(FindObjectsSortMode.None);
         foreach (var netObj in todosLosNetObjects) {
             if (netObj.CompareTag("Item") && netObj.IsSpawned) {
@@ -329,7 +329,7 @@ public class GameManager : NetworkBehaviour {
             listaPuntajes[i] = reseteado;
         }
 
-        // Volvemos a repoblar la arena con 30 esferas al resetear
+        //  esferas al resetear
         for (int i = 0; i < esferasIniciales; i++) {
             SpawnItemAleatorio();
         }
