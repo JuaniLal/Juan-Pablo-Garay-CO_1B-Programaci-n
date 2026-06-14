@@ -36,8 +36,20 @@ public class GameManager : NetworkBehaviour {
     [Tooltip("Arrastrá acá el PanelMenu interno de tu Canvas de inicio (el que funcionó al activarse).")]
     public GameObject canvasMenuPrincipal;
 
+    [Header("Configuración de Música (50/50)")]
+    [Tooltip("Arrastrá acá tu primer pista de música hecha por vos.")]
+    public AudioClip pistaMúsica1;
+    [Tooltip("Arrastrá acá tu segunda pista de música hecha por vos.")]
+    public AudioClip pistaMúsica2;
+
+    private AudioSource reproductorMúsica;
+
     private NetworkVariable<float> tiempoRestante = new NetworkVariable<float>(60f);
-    private NetworkVariable<bool> juegoActivo = new NetworkVariable<bool>(false);
+
+    public NetworkVariable<bool> juegoActivo = new NetworkVariable<bool>(false);
+    private bool juegoActivoLocal = false;
+
+    public bool JuegoActivo => NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening ? juegoActivo.Value : juegoActivoLocal;
 
     public struct JugadorPuntaje : INetworkSerializable, System.IEquatable<JugadorPuntaje> {
         public ulong clientId;
@@ -61,30 +73,59 @@ public class GameManager : NetworkBehaviour {
         else Destroy(gameObject);
 
         listaPuntajes = new NetworkList<JugadorPuntaje>();
+        reproductorMúsica = GetComponent<AudioSource>();
     }
 
     public override void OnNetworkSpawn() {
         listaPuntajes.OnListChanged += OnListaPuntajesCambiara;
+        juegoActivoLocal = true;
 
         if (IsServer) {
+            if (listaPuntajes != null) {
+                while (listaPuntajes.Count > 0) {
+                    listaPuntajes.RemoveAt(0);
+                }
+            }
+
             tiempoRestante.Value = tiempoDeJuego;
             juegoActivo.Value = true;
 
             NetworkManager.Singleton.OnClientConnectedCallback += OnClienteConectado;
-            PosicionarJugador(NetworkManager.Singleton.LocalClientId);
+
+            listaPuntajes.Add(new JugadorPuntaje { clientId = NetworkManager.Singleton.LocalClientId, puntos = 0 });
+            StartCoroutine(Co_PosicionarConRetraso(NetworkManager.Singleton.LocalClientId, 0));
 
             for (int i = 0; i < esferasIniciales; i++) {
                 SpawnItemAleatorio();
             }
 
             nextSpawnTime = Time.time + 4f;
+
+            // El Host decide la pista inicial y arranca a tocar localmente
+            ElegirYReproducirMúsicaLocal();
         }
 
         panelFinDeJuego.SetActive(false);
         ActualizarUI();
     }
 
+    private void ElegirYReproducirMúsicaLocal() {
+        if (reproductorMúsica == null || pistaMúsica1 == null || pistaMúsica2 == null) return;
+
+        reproductorMúsica.Stop();
+
+        if (Random.value < 0.5f) {
+            reproductorMúsica.clip = pistaMúsica1;
+        }
+        else {
+            reproductorMúsica.clip = pistaMúsica2;
+        }
+
+        reproductorMúsica.Play();
+    }
+
     public override void OnNetworkDespawn() {
+        juegoActivoLocal = false;
         listaPuntajes.OnListChanged -= OnListaPuntajesCambiara;
         if (IsServer && NetworkManager.Singleton != null) {
             NetworkManager.Singleton.OnClientConnectedCallback -= OnClienteConectado;
@@ -92,24 +133,67 @@ public class GameManager : NetworkBehaviour {
     }
 
     private void OnClienteConectado(ulong clientId) {
-        PosicionarJugador(clientId);
+        if (!IsServer) return;
 
-        if (IsServer) {
-            bool existe = false;
-            foreach (var jp in listaPuntajes) {
-                if (jp.clientId == clientId) existe = true;
-            }
-            if (!existe) {
-                listaPuntajes.Add(new JugadorPuntaje { clientId = clientId, puntos = 0 });
+        bool existe = false;
+        for (int i = 0; i < listaPuntajes.Count; i++) {
+            if (listaPuntajes[i].clientId == clientId) existe = true;
+        }
+
+        if (!existe) {
+            int indiceRealOcupado = listaPuntajes.Count;
+            listaPuntajes.Add(new JugadorPuntaje { clientId = clientId, puntos = 0 });
+
+            StartCoroutine(Co_PosicionarConRetraso(clientId, indiceRealOcupado));
+
+            // MODIFICACIÓN: Si la música está sonando en el Host, le enviamos la pista exacta y el segundo actual al cliente que entra
+            if (reproductorMúsica != null && reproductorMúsica.isPlaying) {
+                int indicePista = (reproductorMúsica.clip == pistaMúsica1) ? 1 : 2;
+                float tiempoActualPista = reproductorMúsica.time;
+
+                ClientRpcParams parametrosClienteEspecífico = new ClientRpcParams {
+                    Send = new ClientRpcSendParams {
+                        TargetClientIds = new List<ulong> { clientId }
+                    }
+                };
+
+                SincronizarMúsicaClienteNuevoClientRpc(indicePista, tiempoActualPista, parametrosClienteEspecífico);
             }
         }
+    }
+
+    // NUEVO RPC: Sincroniza la música de forma tardía únicamente para el cliente que se conecta a mitad de partida
+    [ClientRpc]
+    private void SincronizarMúsicaClienteNuevoClientRpc(int indicePista, float tiempoInicio, ClientRpcParams clientRpcParams = default) {
+        // El Host no necesita auto-sincronizarse porque ya inició la reproducción de forma nativa
+        if (IsServer) return;
+
+        if (reproductorMúsica == null || pistaMúsica1 == null || pistaMúsica2 == null) return;
+
+        reproductorMúsica.Stop();
+        reproductorMúsica.clip = (indicePista == 1) ? pistaMúsica1 : pistaMúsica2;
+        reproductorMúsica.time = tiempoInicio;
+        reproductorMúsica.Play();
+    }
+
+    private System.Collections.IEnumerator Co_PosicionarConRetraso(ulong clientId, int ordenDeEntrada) {
+        int intentos = 0;
+        while (!NetworkManager.Singleton.ConnectedClients.ContainsKey(clientId) && intentos < 30) {
+            intentos++;
+            yield return null;
+        }
+        yield return null;
+
+        PosicionarJugadorPorOrdenReal(clientId, ordenDeEntrada);
     }
 
     private void OnListaPuntajesCambiara(NetworkListEvent<JugadorPuntaje> changeEvent) {
         ActualizarUI();
     }
 
-    private void PosicionarJugador(ulong clientId) {
+    private void PosicionarJugadorPorOrdenReal(ulong clientId, int ordenDeEntrada) {
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) return;
+
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var networkClient)) {
             NetworkObject jugadorNetObj = networkClient.PlayerObject;
 
@@ -117,7 +201,7 @@ public class GameManager : NetworkBehaviour {
                 Vector3 posicionInicial = Vector3.zero;
                 Quaternion rotacionInicial = Quaternion.identity;
 
-                switch (clientId) {
+                switch (ordenDeEntrada) {
                     case 0:
                         posicionInicial = new Vector3(0f, 1f, -35f);
                         rotacionInicial = Quaternion.Euler(0f, 0f, 0f);
@@ -145,7 +229,7 @@ public class GameManager : NetworkBehaviour {
                 if (jugadorNetObj.TryGetComponent<PlayerController>(out var controller)) {
                     controller.ResetearEstadoJugador();
                     controller.TeletransportarSeguroClientRpc(posicionInicial, rotacionInicial);
-                    controller.CambiarColorCapsulaClientRpc((int)clientId);
+                    controller.CambiarColorCapsulaClientRpc(ordenDeEntrada);
                 }
                 else {
                     jugadorNetObj.transform.position = posicionInicial;
@@ -156,7 +240,8 @@ public class GameManager : NetworkBehaviour {
     }
 
     void Update() {
-        if (!juegoActivo.Value) return;
+        bool activo = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening ? juegoActivo.Value : juegoActivoLocal;
+        if (!activo) return;
 
         if (IsServer) {
             tiempoRestante.Value -= Time.deltaTime;
@@ -206,21 +291,36 @@ public class GameManager : NetworkBehaviour {
     }
 
     void ActualizarUI() {
-        if (txtPuntajes == null || NetworkManager.Singleton == null) return;
+        if (txtPuntajes == null) return;
 
         string textoPuntos = "Puntajes:\n";
 
-        foreach (var jp in listaPuntajes) {
-            string codigoColor = "#FFFFFF";
+        if (NetworkManager.Singleton == null || listaPuntajes == null || !NetworkManager.Singleton.IsListening) {
+            txtPuntajes.text = textoPuntos;
+            return;
+        }
 
-            switch (jp.clientId) {
-                case 0: codigoColor = "#FF0000"; break;
-                case 1: codigoColor = "#FFFF00"; break;
-                case 2: codigoColor = "#3080FF"; break;
-                case 3: codigoColor = "#00FF00"; break;
+        try {
+            if (listaPuntajes.Count == 0) {
+                txtPuntajes.text = textoPuntos;
+                return;
             }
 
-            textoPuntos += $"<color={codigoColor}>Jugador {jp.clientId + 1}: {jp.puntos} pts</color>\n";
+            for (int i = 0; i < listaPuntajes.Count; i++) {
+                string codigoColor = "#FFFFFF";
+
+                switch (i) {
+                    case 0: codigoColor = "#FF0000"; break;
+                    case 1: codigoColor = "#FFFF00"; break;
+                    case 2: codigoColor = "#3080FF"; break;
+                    case 3: codigoColor = "#00FF00"; break;
+                }
+
+                textoPuntos += $"<color={codigoColor}>Jugador {i + 1}: {listaPuntajes[i].puntos} pts</color>\n";
+            }
+        }
+        catch {
+            // Protección contra desvinculaciones asincrónicas
         }
 
         txtPuntajes.text = textoPuntos;
@@ -228,7 +328,7 @@ public class GameManager : NetworkBehaviour {
 
     [ServerRpc(RequireOwnership = false)]
     public void SumarPuntoServerRpc(ulong clientId) {
-        if (!juegoActivo.Value) return;
+        if (NetworkManager.Singleton == null || !juegoActivo.Value) return;
 
         for (int i = 0; i < listaPuntajes.Count; i++) {
             if (listaPuntajes[i].clientId == clientId) {
@@ -242,7 +342,7 @@ public class GameManager : NetworkBehaviour {
 
     [ServerRpc(RequireOwnership = false)]
     public void NotificarGolpeServerRpc(ulong victimaClientId) {
-        if (!juegoActivo.Value) return;
+        if (NetworkManager.Singleton == null || !juegoActivo.Value) return;
 
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(victimaClientId, out var networkClient)) {
             if (networkClient.PlayerObject != null && networkClient.PlayerObject.TryGetComponent<PlayerController>(out var controller)) {
@@ -254,45 +354,79 @@ public class GameManager : NetworkBehaviour {
         }
     }
 
+    // ACTUALIZADO: Detección de empates dinámicos y formateo correcto de textos
     void TerminarPartida() {
         juegoActivo.Value = false;
-        ulong ganadorId = 0;
         int maxPuntos = -1;
 
-        foreach (var jp in listaPuntajes) {
-            if (jp.puntos > maxPuntos) {
-                maxPuntos = jp.puntos;
-                ganadorId = jp.clientId;
+        // 1. Buscamos cuál fue la puntuación más alta alcanzada
+        for (int i = 0; i < listaPuntajes.Count; i++) {
+            if (listaPuntajes[i].puntos > maxPuntos) {
+                maxPuntos = listaPuntajes[i].puntos;
             }
         }
 
-        string codigoColor = "#FFFFFF";
-
-        switch (ganadorId) {
-            case 0: codigoColor = "#FF0000"; break;
-            case 1: codigoColor = "#FFFF00"; break;
-            case 2: codigoColor = "#3080FF"; break;
-            case 3: codigoColor = "#00FF00"; break;
+        // 2. Filtramos todos los jugadores que tengan esa puntuación máxima
+        List<int> indicesGanadores = new List<int>();
+        for (int i = 0; i < listaPuntajes.Count; i++) {
+            if (listaPuntajes[i].puntos == maxPuntos) {
+                indicesGanadores.Add(i); // Guardamos su índice visual (0, 1, 2, 3)
+            }
         }
 
-        // Pinta todo el cartel con el color hexadecimal del jugador ganador
-        string mensaje = maxPuntos > -1
-            ? $"<color={codigoColor}>Ganador: Jugador {ganadorId + 1} con {maxPuntos} pts</color>"
-            : "Empate sin puntos";
+        string mensaje = "Empate sin puntos";
 
+        if (maxPuntos > 0) {
+            // Caso A: Hay un único ganador definitivo
+            if (indicesGanadores.Count == 1) {
+                int ganadorIndice = indicesGanadores[0];
+                string codigoColor = ObtenerHexColorPorIndice(ganadorIndice);
+                mensaje = $"Ganador: <color={codigoColor}>Jugador {ganadorIndice + 1}</color> con {maxPuntos} pts";
+            }
+            // Caso B: Hay un empate real entre dos o más jugadores con puntos
+            else {
+                mensaje = "¡Empate! ";
+                for (int k = 0; k < indicesGanadores.Count; k++) {
+                    int jugadorIndice = indicesGanadores[k];
+                    string codigoColor = ObtenerHexColorPorIndice(jugadorIndice);
+
+                    mensaje += $"<color={codigoColor}>Jugador {jugadorIndice + 1}</color>";
+
+                    // Ponemos una "y" intermedia bien formateada si faltan más ganadores por agregar
+                    if (k < indicesGanadores.Count - 1) {
+                        mensaje += " y ";
+                    }
+                }
+                mensaje += $" con {maxPuntos} pts";
+            }
+        }
+
+        ApagarMúsicaClientRpc();
         MostrarFinJuegoClientRpc(mensaje);
     }
 
-    // CORRECCIÓN: Agregado el método que Netcode no encontraba para desplegar la UI localmente
+    // Método auxiliar interno para mapear los mismos strings de color de la UI de puntajes
+    private string ObtenerHexColorPorIndice(int indice) {
+        switch (indice) {
+            case 0: return "#FF0000"; // Rojo
+            case 1: return "#FFFF00"; // Amarillo
+            case 2: return "#3080FF"; // Azul
+            case 3: return "#00FF00"; // Verde
+            default: return "#FFFFFF";
+        }
+    }
+
+    [ClientRpc]
+    private void ApagarMúsicaClientRpc() {
+        if (reproductorMúsica != null) {
+            reproductorMúsica.Stop();
+        }
+    }
+
     [ClientRpc]
     void MostrarFinJuegoClientRpc(string mensajeGanador) {
-        if (txtGanador != null) {
-            txtGanador.text = mensajeGanador;
-        }
-
-        if (panelFinDeJuego != null) {
-            panelFinDeJuego.SetActive(true);
-        }
+        if (txtGanador != null) txtGanador.text = mensajeGanador;
+        if (panelFinDeJuego != null) panelFinDeJuego.SetActive(true);
 
         if (btnReiniciar != null) {
             btnReiniciar.onClick.RemoveAllListeners();
@@ -309,12 +443,8 @@ public class GameManager : NetworkBehaviour {
     }
 
     private void IntentarReiniciarPartida() {
-        if (IsServer) {
-            ReiniciarPartida();
-        }
-        else {
-            ReiniciarPartidaServerRpc();
-        }
+        if (IsServer) ReiniciarPartida();
+        else ReiniciarPartidaServerRpc();
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -332,16 +462,20 @@ public class GameManager : NetworkBehaviour {
             }
         }
 
-        foreach (var clientId in NetworkManager.Singleton.ConnectedClientsIds) {
-            PosicionarJugador(clientId);
+        int index = 0;
+        foreach (var id in NetworkManager.Singleton.ConnectedClientsIds) {
+            StartCoroutine(Co_PosicionarConRetraso(id, index));
+            index++;
         }
 
         while (listaPuntajes.Count > 0) {
             listaPuntajes.RemoveAt(0);
         }
 
-        foreach (var clientId in NetworkManager.Singleton.ConnectedClientsIds) {
-            listaPuntajes.Add(new JugadorPuntaje { clientId = clientId, puntos = 0 });
+        index = 0;
+        foreach (var id in NetworkManager.Singleton.ConnectedClientsIds) {
+            listaPuntajes.Add(new JugadorPuntaje { clientId = id, puntos = 0 });
+            index++;
         }
 
         for (int i = 0; i < esferasIniciales; i++) {
@@ -352,53 +486,135 @@ public class GameManager : NetworkBehaviour {
         tiempoRestante.Value = tiempoDeJuego;
         juegoActivo.Value = true;
 
+        ElegirYReproducirMúsicaClientRpc();
         OcultarFinJuegoClientRpc();
+    }
+
+    [ClientRpc]
+    private void ElegirYReproducirMúsicaClientRpc() {
+        ElegirYReproducirMúsicaLocal();
     }
 
     [ClientRpc]
     void OcultarFinJuegoClientRpc() {
         panelFinDeJuego.SetActive(false);
-
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
 
     public void SolicitarSalirAlMenu() {
+        if (NetworkManager.Singleton == null) {
+            DesconectarseLocalmente();
+            return;
+        }
+
+        if (!NetworkManager.Singleton.IsListening && !NetworkManager.Singleton.IsServer && !NetworkManager.Singleton.IsClient) {
+            DesconectarseLocalmente();
+            return;
+        }
+
         if (IsServer) {
-            DespacharSalidaGeneral();
+            List<ulong> remotos = ObtenerClientesRemotos();
+
+            if (remotos.Count > 0) {
+                ClientRpcParams parametrosOpciones = new ClientRpcParams {
+                    Send = new ClientRpcSendParams {
+                        TargetClientIds = remotos
+                    }
+                };
+                ForzarSalidaMenuRemotoClientRpc(parametrosOpciones);
+            }
+
+            DesconectarseLocalmente();
         }
         else {
-            SolicitarSalirAlMenuServerRpc();
+            if (NetworkManager.Singleton.IsClient) {
+                SolicitarSalirAlMenuServerRpc();
+            }
+            else {
+                DesconectarseLocalmente();
+            }
         }
     }
 
     [ServerRpc(RequireOwnership = false)]
     private void SolicitarSalirAlMenuServerRpc() {
-        DespacharSalidaGeneral();
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) return;
+
+        List<ulong> remotos = ObtenerClientesRemotos();
+
+        if (remotos.Count > 0) {
+            ClientRpcParams parametrosOpciones = new ClientRpcParams {
+                Send = new ClientRpcSendParams {
+                    TargetClientIds = remotos
+                }
+            };
+            ForzarSalidaMenuRemotoClientRpc(parametrosOpciones);
+        }
+
+        DesconectarseLocalmente();
     }
 
-    private void DespacharSalidaGeneral() {
-        juegoActivo.Value = false;
-        ForzarSalidaMenuClientRpc();
+    private List<ulong> ObtenerClientesRemotos() {
+        List<ulong> remotos = new List<ulong>();
+
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsListening) {
+            return remotos;
+        }
+
+        if (NetworkManager.Singleton.ConnectedClientsIds == null) {
+            return remotos;
+        }
+
+        foreach (var id in NetworkManager.Singleton.ConnectedClientsIds) {
+            if (id != NetworkManager.Singleton.LocalClientId) {
+                remotos.Add(id);
+            }
+        }
+        return remotos;
     }
 
     [ClientRpc]
-    private void ForzarSalidaMenuClientRpc() {
-        VolverAlMenuLocal();
+    private void ForzarSalidaMenuRemotoClientRpc(ClientRpcParams clientRpcParams = default) {
+        DesconectarseLocalmente();
     }
 
-    private void VolverAlMenuLocal() {
+    private void DesconectarseLocalmente() {
+        bool eraServidor = NetworkManager.Singleton != null && NetworkManager.Singleton.IsServer;
+
         if (NetworkManager.Singleton != null) {
+            if (eraServidor) {
+                NetworkManager.Singleton.OnClientConnectedCallback -= OnClienteConectado;
+            }
             NetworkManager.Singleton.Shutdown();
         }
 
-        if (panelFinDeJuego != null) {
-            panelFinDeJuego.SetActive(false);
+        LimpiezaAbsolutaPorDesconexion(eraServidor);
+    }
+
+    private void LimpiezaAbsolutaPorDesconexion(bool limpiarLista) {
+        juegoActivoLocal = false;
+
+        if (reproductorMúsica != null) {
+            reproductorMúsica.Stop();
         }
 
-        if (canvasMenuPrincipal != null) {
-            canvasMenuPrincipal.SetActive(true);
+        if (limpiarLista && listaPuntajes != null) {
+            try {
+                while (listaPuntajes.Count > 0) {
+                    listaPuntajes.RemoveAt(0);
+                }
+            }
+            catch {
+                // Captura sutil de desvinculaciones asincrónicas
+            }
         }
+
+        if (txtTiempo != null) txtTiempo.text = "Tiempo: --s";
+        if (txtPuntajes != null) txtPuntajes.text = "Puntajes:\n";
+
+        if (panelFinDeJuego != null) panelFinDeJuego.SetActive(false);
+        if (canvasMenuPrincipal != null) canvasMenuPrincipal.SetActive(true);
 
         Camera camaraEscena = Camera.main;
         if (camaraEscena == null) {
@@ -408,7 +624,7 @@ public class GameManager : NetworkBehaviour {
             }
             else {
                 GameObject camRespaldo = new GameObject("Camara_Menu_Respaldo");
-                Camera nuevaCam = camRespaldo.AddComponent<Camera>();
+                camRespaldo.AddComponent<Camera>();
                 camRespaldo.transform.position = new Vector3(0f, 15f, -25f);
                 camRespaldo.transform.rotation = Quaternion.Euler(25f, 0f, 0f);
             }
