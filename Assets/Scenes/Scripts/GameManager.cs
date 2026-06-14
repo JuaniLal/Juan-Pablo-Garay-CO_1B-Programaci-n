@@ -30,6 +30,11 @@ public class GameManager : NetworkBehaviour {
     public GameObject panelFinDeJuego;
     public TextMeshProUGUI txtGanador;
     public Button btnReiniciar;
+    public Button btnSalirMenu;
+
+    [Header("UI Menú Principal (Misma Escena)")]
+    [Tooltip("Arrastrá acá el PanelMenu interno de tu Canvas de inicio (el que funcionó al activarse).")]
+    public GameObject canvasMenuPrincipal;
 
     private NetworkVariable<float> tiempoRestante = new NetworkVariable<float>(60f);
     private NetworkVariable<bool> juegoActivo = new NetworkVariable<bool>(false);
@@ -68,12 +73,10 @@ public class GameManager : NetworkBehaviour {
             NetworkManager.Singleton.OnClientConnectedCallback += OnClienteConectado;
             PosicionarJugador(NetworkManager.Singleton.LocalClientId);
 
-            // Población inicial del mapa de forma segura en el arranque
             for (int i = 0; i < esferasIniciales; i++) {
                 SpawnItemAleatorio();
             }
 
-            // Retraso inicial de 4 segundos al arrancar la red para el spawn progresivo posterior
             nextSpawnTime = Time.time + 4f;
         }
 
@@ -114,30 +117,24 @@ public class GameManager : NetworkBehaviour {
                 Vector3 posicionInicial = Vector3.zero;
                 Quaternion rotacionInicial = Quaternion.identity;
 
-                // DISTRIBUCIÓN EN CRUZ
                 switch (clientId) {
                     case 0:
-                        // JUGADOR 1: Extremo Sur - Mirando al Norte
                         posicionInicial = new Vector3(0f, 1f, -35f);
                         rotacionInicial = Quaternion.Euler(0f, 0f, 0f);
                         break;
                     case 1:
-                        // JUGADOR 2: Extremo Norte - Mirando al Sur
                         posicionInicial = new Vector3(0f, 1f, 35f);
                         rotacionInicial = Quaternion.Euler(0f, 180f, 0f);
                         break;
                     case 2:
-                        // JUGADOR 3: Extremo Oeste - Mirando al Este
                         posicionInicial = new Vector3(-35f, 1f, 0f);
                         rotacionInicial = Quaternion.Euler(0f, 90f, 0f);
                         break;
                     case 3:
-                        // JUGADOR 4: Extremo Este - Mirando al Oeste
                         posicionInicial = new Vector3(35f, 1f, 0f);
                         rotacionInicial = Quaternion.Euler(0f, -90f, 0f);
                         break;
                     default:
-                        // Fallback por si entran más de 4
                         float randomX = Random.Range(xMinimo * 0.5f, xMaximo * 0.5f);
                         float randomZ = Random.Range(zMinimo * 0.5f, zMaximo * 0.5f);
                         posicionInicial = new Vector3(randomX, 1f, randomZ);
@@ -148,8 +145,6 @@ public class GameManager : NetworkBehaviour {
                 if (jugadorNetObj.TryGetComponent<PlayerController>(out var controller)) {
                     controller.ResetearEstadoJugador();
                     controller.TeletransportarSeguroClientRpc(posicionInicial, rotacionInicial);
-
-                    // ordenaa todas las pantallas que pinten este clon según su ID
                     controller.CambiarColorCapsulaClientRpc((int)clientId);
                 }
                 else {
@@ -182,7 +177,6 @@ public class GameManager : NetworkBehaviour {
     }
 
     [Header("Configuración de Exclusión")]
-    [Tooltip("Distancia mínima desde el centro (0,0,0) donde pueden spawnear los ítems. Ajustalo según el tamaño de tu base.")]
     public float radioExclusion = 8f;
 
     void SpawnItemAleatorio() {
@@ -217,17 +211,15 @@ public class GameManager : NetworkBehaviour {
         string textoPuntos = "Puntajes:\n";
 
         foreach (var jp in listaPuntajes) {
-            //  tag de color según el clientId 
             string codigoColor = "#FFFFFF";
 
             switch (jp.clientId) {
-                case 0: codigoColor = "#FF0000"; break; // Jugador 1: Rojo
-                case 1: codigoColor = "#FFFF00"; break; // Jugador 2: Amarillo
-                case 2: codigoColor = "#3080FF"; break; // Jugador 3: Azul (Tono legible)
-                case 3: codigoColor = "#00FF00"; break; // Jugador 4: Verde
+                case 0: codigoColor = "#FF0000"; break;
+                case 1: codigoColor = "#FFFF00"; break;
+                case 2: codigoColor = "#3080FF"; break;
+                case 3: codigoColor = "#00FF00"; break;
             }
 
-            // Formateamos la línea usando la etiqueta <color=HEX>Texto</color> de TextMeshPro
             textoPuntos += $"<color={codigoColor}>Jugador {jp.clientId + 1}: {jp.puntos} pts</color>\n";
         }
 
@@ -248,14 +240,12 @@ public class GameManager : NetworkBehaviour {
         }
     }
 
-    // Procesa de forma autoritativa el impacto de un golpe sobre un jugador
     [ServerRpc(RequireOwnership = false)]
     public void NotificarGolpeServerRpc(ulong victimaClientId) {
         if (!juegoActivo.Value) return;
 
         if (NetworkManager.Singleton.ConnectedClients.TryGetValue(victimaClientId, out var networkClient)) {
             if (networkClient.PlayerObject != null && networkClient.PlayerObject.TryGetComponent<PlayerController>(out var controller)) {
-                // Si la víctima tiene un objeto, se lo quitamos y hacemos respawn de otra esfera
                 if (controller.VerificarSiTieneObjetoServidor()) {
                     controller.ForzarPerdidaObjetoServidor();
                     SpawnItemAleatorio();
@@ -276,18 +266,42 @@ public class GameManager : NetworkBehaviour {
             }
         }
 
-        string mensaje = maxPuntos > -1 ? $"Ganador: Jugador {ganadorId + 1} con {maxPuntos} pts" : "Empate sin puntos";
+        string codigoColor = "#FFFFFF";
+
+        switch (ganadorId) {
+            case 0: codigoColor = "#FF0000"; break;
+            case 1: codigoColor = "#FFFF00"; break;
+            case 2: codigoColor = "#3080FF"; break;
+            case 3: codigoColor = "#00FF00"; break;
+        }
+
+        // Pinta todo el cartel con el color hexadecimal del jugador ganador
+        string mensaje = maxPuntos > -1
+            ? $"<color={codigoColor}>Ganador: Jugador {ganadorId + 1} con {maxPuntos} pts</color>"
+            : "Empate sin puntos";
+
         MostrarFinJuegoClientRpc(mensaje);
     }
 
+    // CORRECCIÓN: Agregado el método que Netcode no encontraba para desplegar la UI localmente
     [ClientRpc]
     void MostrarFinJuegoClientRpc(string mensajeGanador) {
-        txtGanador.text = mensajeGanador;
-        panelFinDeJuego.SetActive(true);
+        if (txtGanador != null) {
+            txtGanador.text = mensajeGanador;
+        }
+
+        if (panelFinDeJuego != null) {
+            panelFinDeJuego.SetActive(true);
+        }
 
         if (btnReiniciar != null) {
             btnReiniciar.onClick.RemoveAllListeners();
             btnReiniciar.onClick.AddListener(IntentarReiniciarPartida);
+        }
+
+        if (btnSalirMenu != null) {
+            btnSalirMenu.onClick.RemoveAllListeners();
+            btnSalirMenu.onClick.AddListener(SolicitarSalirAlMenu);
         }
 
         Cursor.lockState = CursorLockMode.None;
@@ -311,7 +325,6 @@ public class GameManager : NetworkBehaviour {
     public void ReiniciarPartida() {
         if (!IsServer) return;
 
-        //  Buscar todos los NetworkObject de la escena para limpiar los ítems
         NetworkObject[] todosLosNetObjects = FindObjectsByType<NetworkObject>(FindObjectsSortMode.None);
         foreach (var netObj in todosLosNetObjects) {
             if (netObj.CompareTag("Item") && netObj.IsSpawned) {
@@ -323,13 +336,14 @@ public class GameManager : NetworkBehaviour {
             PosicionarJugador(clientId);
         }
 
-        for (int i = 0; i < listaPuntajes.Count; i++) {
-            var reseteado = listaPuntajes[i];
-            reseteado.puntos = 0;
-            listaPuntajes[i] = reseteado;
+        while (listaPuntajes.Count > 0) {
+            listaPuntajes.RemoveAt(0);
         }
 
-        //  esferas al resetear
+        foreach (var clientId in NetworkManager.Singleton.ConnectedClientsIds) {
+            listaPuntajes.Add(new JugadorPuntaje { clientId = clientId, puntos = 0 });
+        }
+
         for (int i = 0; i < esferasIniciales; i++) {
             SpawnItemAleatorio();
         }
@@ -347,5 +361,60 @@ public class GameManager : NetworkBehaviour {
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
+    }
+
+    public void SolicitarSalirAlMenu() {
+        if (IsServer) {
+            DespacharSalidaGeneral();
+        }
+        else {
+            SolicitarSalirAlMenuServerRpc();
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void SolicitarSalirAlMenuServerRpc() {
+        DespacharSalidaGeneral();
+    }
+
+    private void DespacharSalidaGeneral() {
+        juegoActivo.Value = false;
+        ForzarSalidaMenuClientRpc();
+    }
+
+    [ClientRpc]
+    private void ForzarSalidaMenuClientRpc() {
+        VolverAlMenuLocal();
+    }
+
+    private void VolverAlMenuLocal() {
+        if (NetworkManager.Singleton != null) {
+            NetworkManager.Singleton.Shutdown();
+        }
+
+        if (panelFinDeJuego != null) {
+            panelFinDeJuego.SetActive(false);
+        }
+
+        if (canvasMenuPrincipal != null) {
+            canvasMenuPrincipal.SetActive(true);
+        }
+
+        Camera camaraEscena = Camera.main;
+        if (camaraEscena == null) {
+            Camera[] todasLasCamaras = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (todasLasCamaras.Length > 0) {
+                todasLasCamaras[0].gameObject.SetActive(true);
+            }
+            else {
+                GameObject camRespaldo = new GameObject("Camara_Menu_Respaldo");
+                Camera nuevaCam = camRespaldo.AddComponent<Camera>();
+                camRespaldo.transform.position = new Vector3(0f, 15f, -25f);
+                camRespaldo.transform.rotation = Quaternion.Euler(25f, 0f, 0f);
+            }
+        }
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 }
