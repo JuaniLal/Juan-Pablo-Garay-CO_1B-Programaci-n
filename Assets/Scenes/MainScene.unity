@@ -696,8 +696,8 @@ MonoBehaviour:
   btnReiniciar: {fileID: 1286702384}
   btnSalirMenu: {fileID: 1391647204}
   canvasMenuPrincipal: {fileID: 526059169}
-  "pistaM\xFAsica1": {fileID: 8300000, guid: aa93c00c95e01c44082a2c22b571e649, type: 3}
-  "pistaM\xFAsica2": {fileID: 8300000, guid: c795d0c29dae1a644a664ae285b47b24, type: 3}
+  "pistaM\xFAsica1": {fileID: 8300000, guid: c795d0c29dae1a644a664ae285b47b24, type: 3}
+  "pistaM\xFAsica2": {fileID: 8300000, guid: aa93c00c95e01c44082a2c22b571e649, type: 3}
   juegoActivo:
     UpdateTraits:
       MinSecondsBetweenUpdates: 0

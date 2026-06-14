@@ -114,6 +114,7 @@ public class GameManager : NetworkBehaviour {
 
         reproductorMúsica.Stop();
 
+        // 1. Sorteamos cuál de las dos pistas va a sonar (50/50)
         if (Random.value < 0.5f) {
             reproductorMúsica.clip = pistaMúsica1;
         }
@@ -121,7 +122,28 @@ public class GameManager : NetworkBehaviour {
             reproductorMúsica.clip = pistaMúsica2;
         }
 
+        // 2. Aplicamos la distinción de pitch para la pista 1
+        ConfigurarPitchLocalSegunClip();
+
         reproductorMúsica.Play();
+    }
+
+    // Método auxiliar para centralizar la fórmula del pitch sin repetir código
+    private void ConfigurarPitchLocalSegunClip() {
+        if (reproductorMúsica == null || reproductorMúsica.clip == null) return;
+
+        if (reproductorMúsica.clip == pistaMúsica1) {
+            float tiempoObjetivoSonando = tiempoDeJuego;
+            if (tiempoObjetivoSonando > 0) {
+                reproductorMúsica.pitch = reproductorMúsica.clip.length / tiempoObjetivoSonando;
+            }
+            else {
+                reproductorMúsica.pitch = 1.0f;
+            }
+        }
+        else {
+            reproductorMúsica.pitch = 1.0f;
+        }
     }
 
     public override void OnNetworkDespawn() {
@@ -146,10 +168,10 @@ public class GameManager : NetworkBehaviour {
 
             StartCoroutine(Co_PosicionarConRetraso(clientId, indiceRealOcupado));
 
-            // MODIFICACIÓN: Si la música está sonando en el Host, le enviamos la pista exacta y el segundo actual al cliente que entra
             if (reproductorMúsica != null && reproductorMúsica.isPlaying) {
                 int indicePista = (reproductorMúsica.clip == pistaMúsica1) ? 1 : 2;
                 float tiempoActualPista = reproductorMúsica.time;
+                float pitchActual = reproductorMúsica.pitch;
 
                 ClientRpcParams parametrosClienteEspecífico = new ClientRpcParams {
                     Send = new ClientRpcSendParams {
@@ -157,21 +179,20 @@ public class GameManager : NetworkBehaviour {
                     }
                 };
 
-                SincronizarMúsicaClienteNuevoClientRpc(indicePista, tiempoActualPista, parametrosClienteEspecífico);
+                SincronizarMúsicaClienteNuevoClientRpc(indicePista, tiempoActualPista, pitchActual, parametrosClienteEspecífico);
             }
         }
     }
 
-    // NUEVO RPC: Sincroniza la música de forma tardía únicamente para el cliente que se conecta a mitad de partida
     [ClientRpc]
-    private void SincronizarMúsicaClienteNuevoClientRpc(int indicePista, float tiempoInicio, ClientRpcParams clientRpcParams = default) {
-        // El Host no necesita auto-sincronizarse porque ya inició la reproducción de forma nativa
+    private void SincronizarMúsicaClienteNuevoClientRpc(int indicePista, float tiempoInicio, float pitchMúsica, ClientRpcParams clientRpcParams = default) {
         if (IsServer) return;
 
         if (reproductorMúsica == null || pistaMúsica1 == null || pistaMúsica2 == null) return;
 
         reproductorMúsica.Stop();
         reproductorMúsica.clip = (indicePista == 1) ? pistaMúsica1 : pistaMúsica2;
+        reproductorMúsica.pitch = pitchMúsica;
         reproductorMúsica.time = tiempoInicio;
         reproductorMúsica.Play();
     }
@@ -354,36 +375,32 @@ public class GameManager : NetworkBehaviour {
         }
     }
 
-    // ACTUALIZADO: Detección de empates dinámicos y formateo correcto de textos
+    // ACTUALIZACIÓN DE EMPATES: Recolecta ganadores de forma justa y dinámica
     void TerminarPartida() {
         juegoActivo.Value = false;
         int maxPuntos = -1;
 
-        // 1. Buscamos cuál fue la puntuación más alta alcanzada
         for (int i = 0; i < listaPuntajes.Count; i++) {
             if (listaPuntajes[i].puntos > maxPuntos) {
                 maxPuntos = listaPuntajes[i].puntos;
             }
         }
 
-        // 2. Filtramos todos los jugadores que tengan esa puntuación máxima
         List<int> indicesGanadores = new List<int>();
         for (int i = 0; i < listaPuntajes.Count; i++) {
             if (listaPuntajes[i].puntos == maxPuntos) {
-                indicesGanadores.Add(i); // Guardamos su índice visual (0, 1, 2, 3)
+                indicesGanadores.Add(i);
             }
         }
 
         string mensaje = "Empate sin puntos";
 
         if (maxPuntos > 0) {
-            // Caso A: Hay un único ganador definitivo
             if (indicesGanadores.Count == 1) {
                 int ganadorIndice = indicesGanadores[0];
                 string codigoColor = ObtenerHexColorPorIndice(ganadorIndice);
                 mensaje = $"Ganador: <color={codigoColor}>Jugador {ganadorIndice + 1}</color> con {maxPuntos} pts";
             }
-            // Caso B: Hay un empate real entre dos o más jugadores con puntos
             else {
                 mensaje = "¡Empate! ";
                 for (int k = 0; k < indicesGanadores.Count; k++) {
@@ -392,7 +409,6 @@ public class GameManager : NetworkBehaviour {
 
                     mensaje += $"<color={codigoColor}>Jugador {jugadorIndice + 1}</color>";
 
-                    // Ponemos una "y" intermedia bien formateada si faltan más ganadores por agregar
                     if (k < indicesGanadores.Count - 1) {
                         mensaje += " y ";
                     }
@@ -405,13 +421,12 @@ public class GameManager : NetworkBehaviour {
         MostrarFinJuegoClientRpc(mensaje);
     }
 
-    // Método auxiliar interno para mapear los mismos strings de color de la UI de puntajes
     private string ObtenerHexColorPorIndice(int indice) {
         switch (indice) {
-            case 0: return "#FF0000"; // Rojo
-            case 1: return "#FFFF00"; // Amarillo
-            case 2: return "#3080FF"; // Azul
-            case 3: return "#00FF00"; // Verde
+            case 0: return "#FF0000";
+            case 1: return "#FFFF00";
+            case 2: return "#3080FF";
+            case 3: return "#00FF00";
             default: return "#FFFFFF";
         }
     }
@@ -452,6 +467,10 @@ public class GameManager : NetworkBehaviour {
         ReiniciarPartida();
     }
 
+    public void PolicyReinic() {
+        ReiniciarPartida();
+    }
+
     public void ReiniciarPartida() {
         if (!IsServer) return;
 
@@ -486,13 +505,27 @@ public class GameManager : NetworkBehaviour {
         tiempoRestante.Value = tiempoDeJuego;
         juegoActivo.Value = true;
 
-        ElegirYReproducirMúsicaClientRpc();
+        // MODIFICACIÓN AUDIO: Sorteamos en el Servidor y enviamos la pista definitiva por red a todos los clientes
+        int pistaElegida = (Random.value < 0.5f) ? 1 : 2;
+        ElegirYReproducirMúsicaSincronizadaClientRpc(pistaElegida);
+
         OcultarFinJuegoClientRpc();
     }
 
+    // NUEVO RPC: Sincroniza la pista sorteada por el host en todos los clientes en simultáneo en cada reinicio
     [ClientRpc]
-    private void ElegirYReproducirMúsicaClientRpc() {
-        ElegirYReproducirMúsicaLocal();
+    private void ElegirYReproducirMúsicaSincronizadaClientRpc(int numeroPista) {
+        if (reproductorMúsica == null || pistaMúsica1 == null || pistaMúsica2 == null) return;
+
+        reproductorMúsica.Stop();
+
+        // Todos cargan estrictamente la pista que dictó el Servidor
+        reproductorMúsica.clip = (numeroPista == 1) ? pistaMúsica1 : pistaMúsica2;
+
+        // Cada máquina calcula localmente el pitch correspondiente para mantener la regla de la pista 1
+        ConfigurarPitchLocalSegunClip();
+
+        reproductorMúsica.Play();
     }
 
     [ClientRpc]
@@ -597,6 +630,7 @@ public class GameManager : NetworkBehaviour {
 
         if (reproductorMúsica != null) {
             reproductorMúsica.Stop();
+            reproductorMúsica.pitch = 1.0f;
         }
 
         if (limpiarLista && listaPuntajes != null) {
