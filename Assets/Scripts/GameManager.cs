@@ -13,10 +13,10 @@ public class GameManager : NetworkBehaviour {
     public float tiempoDeJuego = 60f;
     public GameObject itemPrefab;
     public float spawnInterval = 3f;
-    [Tooltip("Cantidad de esferas que se generarán distribuidas por el mapa al iniciar o reiniciar la partida.")]
+    [Tooltip("Cantidad de esferas al iniciar o reiniciar la partida.")]
     public int esferasIniciales = 30;
 
-    [Header("Límites de la Zona de Spawn Aleatoria (Escala 123)")]
+    [Header("Límites de la Zona de Spawn)")]
     public float xMinimo = -56f;
     public float xMaximo = 56f;
     public float zMinimo = -56f;
@@ -33,14 +33,14 @@ public class GameManager : NetworkBehaviour {
     public Button btnReiniciar;
     public Button btnSalirMenu;
 
-    [Header("UI Menú Principal (Misma Escena)")]
-    [Tooltip("Arrastrá acá el PanelMenu interno de tu Canvas de inicio (el que funcionó al activarse).")]
+    [Header("UI Menú Principal ")]
+    [Tooltip("PanelMenu.")]
     public GameObject canvasMenuPrincipal;
 
-    [Header("Configuración de Música (50/50)")]
-    [Tooltip("Arrastrá acá tu primer pista de música hecha por vos.")]
+    [Header("Música (50/50)")]
+    [Tooltip("pista1.")]
     public AudioClip pistaMúsica1;
-    [Tooltip("Arrastrá acá tu segunda pista de música hecha por vos.")]
+    [Tooltip("pista2.")]
     public AudioClip pistaMúsica2;
 
     private AudioSource reproductorMúsica;
@@ -102,7 +102,7 @@ public class GameManager : NetworkBehaviour {
 
             nextSpawnTime = Time.time + 4f;
 
-            // El Host decide la pista inicial y arranca a tocar localmente
+            // El Host decide la pista inicial
             ElegirYReproducirMúsicaLocal();
         }
 
@@ -115,7 +115,7 @@ public class GameManager : NetworkBehaviour {
 
         reproductorMúsica.Stop();
 
-        // 1. Sorteamos cuál de las dos pistas va a sonar (50/50)
+        // Pistas (50/50)
         if (Random.value < 0.5f) {
             reproductorMúsica.clip = pistaMúsica1;
         }
@@ -123,7 +123,7 @@ public class GameManager : NetworkBehaviour {
             reproductorMúsica.clip = pistaMúsica2;
         }
 
-        // 2. Aplicamos la distinción de pitch para la pista 1
+        //  pitch para la pista 1
         ConfigurarPitchLocalSegunClip();
 
         reproductorMúsica.Play();
@@ -261,7 +261,7 @@ public class GameManager : NetworkBehaviour {
     }
 
     void Update() {
-        // SOLUCIÓN DEFINITIVA: Hablamos directo con el Nuevo Input System de Unity
+        
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) {
             SalirDelJuegoTotalmente();
             return; // Cortamos el frame acá si decide salirse
@@ -510,7 +510,7 @@ public class GameManager : NetworkBehaviour {
         tiempoRestante.Value = tiempoDeJuego;
         juegoActivo.Value = true;
 
-        // Sorteamos en el Servidor y enviamos la pista definitiva por red a todos los clientes
+        // Sorteo y envio de la pista a los clientes
         int pistaElegida = (Random.value < 0.5f) ? 1 : 2;
         ElegirYReproducirMúsicaSincronizadaClientRpc(pistaElegida);
 
@@ -639,7 +639,7 @@ public class GameManager : NetworkBehaviour {
                 }
             }
             catch {
-                // Captura sutil de desvinculaciones asincrónicas
+                // Captura desvinculaciones asincrónicas
             }
         }
 

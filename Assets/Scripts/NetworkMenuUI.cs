@@ -13,7 +13,7 @@ public class NetworkMenuUI : MonoBehaviour {
     void Start() {
         
         txtAutor.text = "Desarrollado por: Juan Pablo Garay.";
-        inputIP.text = "127.0.0.1"; // IP por defecto (Localhost)
+        inputIP.text = "127.0.0.1"; // IP Local capaz hay q cambiarla manual en hamachi
 
         btnHost.onClick.AddListener(IniciarHost);
         btnCliente.onClick.AddListener(IniciarCliente);

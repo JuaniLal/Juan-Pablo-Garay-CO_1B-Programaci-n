@@ -22,7 +22,7 @@ public class PlayerController : NetworkBehaviour {
     private float rotacionX = 0f;
     private Rigidbody rb;
 
-    // Variables internas de input
+    // Variables  input
     private float inputX = 0f;
     private float inputZ = 0f;
     private float rotacionMouseX = 0f;
@@ -117,23 +117,19 @@ public class PlayerController : NetworkBehaviour {
     void Update() {
         if (!IsOwner) return;
 
-        // ==========================================
-        // 1. CAPTURA DE INPUTS DEL MOUSE
-        // ==========================================
+        
         if (UnityEngine.InputSystem.Mouse.current != null) {
             var mouse = UnityEngine.InputSystem.Mouse.current;
             rotacionMouseX = mouse.delta.x.ReadValue() * sensibilidadMouse;
             rotacionMouseY = mouse.delta.y.ReadValue() * sensibilidadMouse;
 
-            // Input de Ataque: Clic Izquierdo
+            // aTAQUE
             if (mouse.leftButton.wasPressedThisFrame) {
                 AtacarServerRpc();
             }
         }
 
-        // ==========================================
-        // 2. CAPTURA DE INPUTS DEL TECLADO
-        // ==========================================
+        
         inputX = 0f;
         inputZ = 0f;
 
@@ -144,7 +140,7 @@ public class PlayerController : NetworkBehaviour {
             if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) inputX = -1f;
             if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) inputX = 1f;
 
-            // Input de Salto: Barra Espaciadora
+            
             if (keyboard.spaceKey.wasPressedThisFrame && EstaEnElSuelo()) {
                 deseoSaltar = true;
             }
@@ -166,7 +162,7 @@ public class PlayerController : NetworkBehaviour {
         Vector3 movimiento = new Vector3(inputX, 0f, inputZ).normalized * velocidad * Time.fixedDeltaTime;
         transform.Translate(movimiento, Space.Self);
 
-        // Aplicación física del Salto
+       
         if (deseoSaltar) {
             rb.AddForce(Vector3.up * fuerzaSalto, ForceMode.Impulse);
             deseoSaltar = false;
@@ -177,7 +173,7 @@ public class PlayerController : NetworkBehaviour {
     }
 
     private bool EstaEnElSuelo() {
-        // Lanza una pequeña esfera de detección debajo de la cápsula para comprobar superficies
+        
         float radioDeteccionSuelo = 0.3f;
         Vector3 puntoSuelo = transform.position + Vector3.down * 0.9f;
         Collider[] colliders = Physics.OverlapSphere(puntoSuelo, radioDeteccionSuelo);
@@ -190,10 +186,10 @@ public class PlayerController : NetworkBehaviour {
 
     [ServerRpc]
     private void AtacarServerRpc() {
-        // Definimos la posición del Hitbox al frente basándonos en la orientación horizontal del cuerpo
+        // Hitbox al frente
         Vector3 centroHitbox = transform.position + transform.forward * rangoAtaque;
 
-        // Captura todos los objetos físicos dentro del volumen esférico frontal de ataque
+        
         Collider[] golpeados = Physics.OverlapSphere(centroHitbox, radioHitbox);
 
         foreach (var col in golpeados) {
@@ -209,7 +205,7 @@ public class PlayerController : NetworkBehaviour {
     private void OnTriggerEnter(Collider other) {
         if (!IsServer) return;
 
-        // 1. RECOGIDA DEL ÍTEM
+        //  RECOGE ÍTEM
         if (other.CompareTag("Item") && !tieneObjeto) {
             NetworkObject netObj = other.GetComponent<NetworkObject>();
             if (netObj != null) {
@@ -219,7 +215,7 @@ public class PlayerController : NetworkBehaviour {
             }
         }
 
-        // 2. ENTREGA EN LA BASE CENTRAL
+        //  ENTREGA EN LA BASE CENTRAL
         if (other.CompareTag("ZonaEntrega") && tieneObjeto) {
             tieneObjeto = false;
             CambiarEstadoObjetoVisualClientRpc(false);
@@ -261,7 +257,7 @@ public class PlayerController : NetworkBehaviour {
     [ClientRpc]
     public void TeletransportarSeguroClientRpc(Vector3 nuevaPosicion, Quaternion nuevaRotacion) {
         if (IsOwner) {
-            // 1. Ejecutamos el posicionamiento (con o sin ClientNetworkTransform)
+            // posicionamiento 
             if (TryGetComponent<ClientNetworkTransform>(out var clientTransform)) {
                 clientTransform.Teleport(nuevaPosicion, nuevaRotacion, transform.localScale);
             }
@@ -270,11 +266,10 @@ public class PlayerController : NetworkBehaviour {
                 transform.rotation = nuevaRotacion;
             }
 
-            // 2. CORRECCIÓN ROBUSTA: Obtenemos el Rigidbody de forma segura en este mismo frame
-            // para limpiar la inercia residual sin depender de variables globales externas
+            // limpia inercia residual del rigidbody :3
             if (TryGetComponent<Rigidbody>(out var rigidbodyLocal)) {
                 rigidbodyLocal.linearVelocity = Vector3.zero;
-                rigidbodyLocal.angularVelocity = Vector3.zero; // Limpia también rotaciones físicas raras
+                rigidbodyLocal.angularVelocity = Vector3.zero; // RESET
             }
         }
     }
@@ -286,7 +281,7 @@ public class PlayerController : NetworkBehaviour {
         }
     }
 
-    // Dibujamos el Hitbox en el editor para que puedas calibrar el rango de ataque con facilidad
+    // guizmo pa ver la hitbox
     private void OnDrawGizmosSelected() {
         Gizmos.color = Color.red;
         Vector3 centroHitbox = transform.position + transform.forward * rangoAtaque;

@@ -25,7 +25,7 @@ public class SelectorModoSeguro : MonoBehaviour {
     private bool soyHost = false;
 
     void Start() {
-        // Iniciamos el sistema por primera vez
+        
         InicializarTodo();
     }
 
@@ -61,7 +61,7 @@ public class SelectorModoSeguro : MonoBehaviour {
         }
     }
 
-    // Vinculado al OnClick() de tu botón de Crear Host
+    // Vinculado al OnClick de Crear Host
     public void RegistrarInicioHost() {
         if (soyHost) return;
 
