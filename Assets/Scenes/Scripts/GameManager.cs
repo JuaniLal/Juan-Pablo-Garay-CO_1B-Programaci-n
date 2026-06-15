@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using Unity.Netcode.Components;
+using UnityEngine.InputSystem;
 
 public class GameManager : NetworkBehaviour {
     public static GameManager Instance;
@@ -128,7 +129,6 @@ public class GameManager : NetworkBehaviour {
         reproductorMúsica.Play();
     }
 
-    // Método auxiliar para centralizar la fórmula del pitch sin repetir código
     private void ConfigurarPitchLocalSegunClip() {
         if (reproductorMúsica == null || reproductorMúsica.clip == null) return;
 
@@ -261,6 +261,12 @@ public class GameManager : NetworkBehaviour {
     }
 
     void Update() {
+        // SOLUCIÓN DEFINITIVA: Hablamos directo con el Nuevo Input System de Unity
+        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) {
+            SalirDelJuegoTotalmente();
+            return; // Cortamos el frame acá si decide salirse
+        }
+
         bool activo = NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening ? juegoActivo.Value : juegoActivoLocal;
         if (!activo) return;
 
@@ -375,7 +381,6 @@ public class GameManager : NetworkBehaviour {
         }
     }
 
-    // ACTUALIZACIÓN DE EMPATES: Recolecta ganadores de forma justa y dinámica
     void TerminarPartida() {
         juegoActivo.Value = false;
         int maxPuntos = -1;
@@ -505,26 +510,20 @@ public class GameManager : NetworkBehaviour {
         tiempoRestante.Value = tiempoDeJuego;
         juegoActivo.Value = true;
 
-        // MODIFICACIÓN AUDIO: Sorteamos en el Servidor y enviamos la pista definitiva por red a todos los clientes
+        // Sorteamos en el Servidor y enviamos la pista definitiva por red a todos los clientes
         int pistaElegida = (Random.value < 0.5f) ? 1 : 2;
         ElegirYReproducirMúsicaSincronizadaClientRpc(pistaElegida);
 
         OcultarFinJuegoClientRpc();
     }
 
-    // NUEVO RPC: Sincroniza la pista sorteada por el host en todos los clientes en simultáneo en cada reinicio
     [ClientRpc]
     private void ElegirYReproducirMúsicaSincronizadaClientRpc(int numeroPista) {
         if (reproductorMúsica == null || pistaMúsica1 == null || pistaMúsica2 == null) return;
 
         reproductorMúsica.Stop();
-
-        // Todos cargan estrictamente la pista que dictó el Servidor
         reproductorMúsica.clip = (numeroPista == 1) ? pistaMúsica1 : pistaMúsica2;
-
-        // Cada máquina calcula localmente el pitch correspondiente para mantener la regla de la pista 1
         ConfigurarPitchLocalSegunClip();
-
         reproductorMúsica.Play();
     }
 
@@ -666,5 +665,13 @@ public class GameManager : NetworkBehaviour {
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+    }
+
+    public void SalirDelJuegoTotalmente() {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 }
